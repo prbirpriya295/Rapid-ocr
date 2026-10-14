@@ -1,0 +1,11 @@
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+python-multipart==0.0.20
+pydantic-settings==2.7.0
+numpy>=1.24
+pillow>=10.4
+pypdfium2==4.30.0
+# OCR: PP-OCRv6 medium models via RapidOCR, run on OpenVINO (no PaddlePaddle at runtime).
+# Same field accuracy as PaddleOCR on the 18-sample test set (117/118), faster on CPU, much smaller image.
+rapidocr==3.10.0
+openvino==2026.4.1

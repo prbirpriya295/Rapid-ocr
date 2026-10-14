@@ -1,0 +1,806 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Document OCR</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --surface: #ffffff; --surface-2: #f0f2f5; --border: #dfe3e8;
+    --text: #1b1f24; --muted: #5f6b7a; --accent: #2457d6; --accent-soft: #e6edfc;
+    --ok: #17803d; --ok-soft: #e3f4e8; --warn: #a15c00; --warn-soft: #fdf1dc;
+    --bad: #c0262d; --bad-soft: #fde6e7; --radius: 10px;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111418; --surface: #1a1e24; --surface-2: #222830; --border: #2e353f;
+      --text: #e6e9ed; --muted: #97a1ad; --accent: #7aa2ff; --accent-soft: #1d2a47;
+      --ok: #5fcf85; --ok-soft: #16301f; --warn: #f0b45a; --warn-soft: #33270f;
+      --bad: #ff7b80; --bad-soft: #3a1a1c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+  h1 { font-size: 22px; margin: 0; }
+  h2 { font-size: 16px; margin: 0 0 12px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; margin-bottom: 16px; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .hidden { display: none !important; }
+
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border-radius: 999px;
+          background: var(--surface); border: 1px solid var(--border); font-size: 13px; cursor: pointer; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.warn { background: var(--warn); }
+
+  .settings { margin-top: 10px; }
+  input[type=text] { font: inherit; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px;
+                     background: var(--surface-2); color: var(--text); min-width: 260px; flex: 1; }
+
+  .drop { border: 2px dashed var(--border); border-radius: var(--radius); padding: 34px 16px; text-align: center;
+          cursor: pointer; transition: border-color .15s, background .15s; }
+  .drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  .drop strong { color: var(--accent); }
+
+  button { font: inherit; font-weight: 600; padding: 9px 18px; border-radius: 8px; border: 1px solid transparent;
+           background: var(--accent); color: #fff; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.ghost { background: transparent; color: var(--text); border-color: var(--border); font-weight: 500; padding: 6px 12px; }
+  button.ghost:hover { background: var(--surface-2); }
+
+  .bar { height: 10px; background: var(--surface-2); border-radius: 999px; overflow: hidden; margin: 12px 0 8px; }
+  .bar > div { height: 100%; width: 0; background: var(--accent); transition: width .4s; }
+  .bar.indeterminate > div { width: 30%; animation: slide 1.4s ease-in-out infinite; }
+  @keyframes slide { 0% { margin-left: -30%; } 100% { margin-left: 100%; } }
+
+  .alert { padding: 12px 14px; border-radius: 8px; margin-bottom: 16px; border: 1px solid; }
+  .alert.bad { background: var(--bad-soft); color: var(--bad); border-color: var(--bad); }
+  .alert.warn { background: var(--warn-soft); color: var(--warn); border-color: var(--warn); }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .stat { background: var(--surface-2); border-radius: 8px; padding: 10px 12px; }
+  .stat .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .stat .value { font-size: 18px; font-weight: 650; margin-top: 2px; }
+
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .badge.ok { background: var(--ok-soft); color: var(--ok); }
+  .badge.warn { background: var(--warn-soft); color: var(--warn); }
+  .badge.bad { background: var(--bad-soft); color: var(--bad); }
+  .badge.info { background: var(--accent-soft); color: var(--accent); }
+
+  .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px 20px; }
+  .field { border-bottom: 1px solid var(--border); padding: 8px 0; }
+  .field .label { font-size: 12px; color: var(--muted); }
+  .field .value { font-family: var(--mono); font-size: 15px; word-break: break-all; }
+  .field .value.none { font-family: inherit; color: var(--muted); font-style: italic; }
+  .checks { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+  .card-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .card-head h2 { margin: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 18px 0 8px; }
+  .parties { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .party { background: var(--surface-2); border-radius: 8px; padding: 12px 14px; }
+  .party .role { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .party .name { font-weight: 650; font-size: 16px; margin: 2px 0 4px; }
+  .party .addr { color: var(--muted); font-size: 13.5px; margin-bottom: 8px; }
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; font-size: 13.5px; margin: 0; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; font-family: var(--mono); overflow-wrap: anywhere; min-width: 0; }
+  .kv dd .badge { margin-left: 6px; font-family: system-ui, sans-serif; }
+  table.data { border-collapse: collapse; width: 100%; font-size: 14px; }
+  table.data th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase;
+                  letter-spacing: .03em; border-bottom: 1px solid var(--border); padding: 6px 8px; }
+  table.data td { border-bottom: 1px solid var(--border); padding: 7px 8px; vertical-align: top; }
+  table.data .num { text-align: right; font-family: var(--mono); white-space: nowrap; }
+  table.data tr.grand td { font-weight: 700; font-size: 16px; border-bottom: none; }
+  .sub { color: var(--muted); font-size: 12.5px; font-style: italic; }
+  .totals { max-width: 460px; margin-left: auto; }
+  .words { text-align: right; color: var(--muted); font-size: 13px; margin-top: 6px; }
+
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; max-height: 120px; overflow-y: auto; }
+  .chip { padding: 5px 11px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface);
+          color: var(--text); font-weight: 500; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+  .chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .chip .dot { width: 7px; height: 7px; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 12px 0; }
+  .tab { background: none; color: var(--muted); border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 8px 12px; font-weight: 500; }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  pre { background: var(--surface-2); border-radius: 8px; padding: 14px; margin: 0; white-space: pre-wrap;
+        word-break: break-word; font: 13.5px/1.55 var(--mono); max-height: 520px; overflow: auto; }
+  .lines { max-height: 520px; overflow: auto; }
+  .line { display: grid; grid-template-columns: 1fr 120px; gap: 12px; align-items: center; padding: 5px 8px; border-radius: 6px; font-family: var(--mono); font-size: 13.5px; }
+  .line.low { background: var(--warn-soft); }
+  .line.vlow { background: var(--bad-soft); }
+  .conf { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); font-family: inherit; }
+  .conf .track { flex: 1; height: 6px; background: var(--border); border-radius: 999px; overflow: hidden; }
+  .conf .fill { height: 100%; background: var(--ok); }
+  .line.low .fill { background: var(--warn); } .line.vlow .fill { background: var(--bad); }
+  table.ocr { border-collapse: collapse; width: 100%; margin-bottom: 16px; font-size: 14px; }
+  table.ocr td, table.ocr th { border: 1px solid var(--border); padding: 6px 9px; text-align: left; vertical-align: top; }
+  table.ocr tr:first-child td, table.ocr th { background: var(--surface-2); font-weight: 600; }
+  .table-scroll { overflow-x: auto; }
+  .meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  @media (max-width: 600px) { .line { grid-template-columns: 1fr 80px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Document OCR</h1>
+      <div class="muted small">Upload an invoice, scan, photo or PDF of any length</div>
+    </div>
+    <span class="pill" id="statusPill" title="Backend connection (click to change URL)">
+      <span class="dot" id="statusDot"></span><span id="statusText">Checking backend…</span>
+    </span>
+  </header>
+
+  <div class="card settings hidden" id="settings">
+    <div class="row">
+      <label for="apiUrl" class="small muted">Backend URL</label>
+      <input type="text" id="apiUrl" spellcheck="false">
+      <button class="ghost" id="saveUrl">Save &amp; reconnect</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose a document">
+      <div><strong>Choose a file</strong> or drag it here</div>
+      <div class="muted small" id="fileInfo">PDF, PNG, JPG, TIFF, BMP or WEBP</div>
+    </div>
+    <input type="file" id="fileInput" class="hidden" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp">
+    <div class="row" style="margin-top:14px; justify-content:space-between">
+      <span class="muted small">Scanned pages take roughly 20&ndash;60 seconds each; digital PDFs are instant.</span>
+      <button id="runBtn" disabled>Extract text</button>
+    </div>
+  </div>
+
+  <div id="error" class="alert bad hidden"></div>
+
+  <div class="card hidden" id="progressCard">
+    <div class="row" style="justify-content:space-between">
+      <strong id="progressTitle">Uploading…</strong>
+      <span class="muted small" id="elapsed">0s</span>
+    </div>
+    <div class="bar indeterminate" id="bar"><div></div></div>
+    <div class="muted small" id="progressText"></div>
+  </div>
+
+  <div id="results" class="hidden">
+    <div id="truncated" class="alert warn hidden"></div>
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between; margin-bottom:12px">
+        <h2 style="margin:0">Summary</h2>
+        <div class="row">
+          <button class="ghost" id="dlTxt">Download .txt</button>
+          <button class="ghost" id="dlJson">Download JSON</button>
+        </div>
+      </div>
+      <div class="stats" id="stats"></div>
+    </div>
+
+    <div id="invoiceSection"></div>
+
+    <div class="card">
+      <h2>Pages</h2>
+      <div class="chips" id="chips"></div>
+      <div class="meta" id="pageMeta"></div>
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-view="text">Text</button>
+        <button class="tab" data-view="lines">Lines &amp; confidence</button>
+        <button class="tab" data-view="tables">Tables</button>
+      </div>
+      <div id="view"></div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between; margin-bottom:12px">
+        <h2 style="margin:0">Full document text</h2>
+        <button class="ghost" id="copyAll">Copy</button>
+      </div>
+      <pre id="fullText"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const POLL_MS = 1500;
+
+  // ---- backend URL: same origin when the API serves this page at "/", else localhost:8001
+  // (covers opening the file directly or from a dev server such as VS Code Live Server) ----
+  const servedByApi = location.protocol.startsWith("http") && location.pathname === "/";
+  const defaultApi = servedByApi ? location.origin : "http://localhost:8001";
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch { /* storage unavailable */ } },
+  };
+  let api = (store.get("ocr.api") || defaultApi).replace(/\/+$/, "");
+  $("apiUrl").value = api;
+
+  let file = null, result = null, currentPage = 0, currentView = "text", timer = null, startedAt = 0;
+
+  // ---- health ----
+  async function checkHealth() {
+    setStatus("warn", "Connecting…");
+    try {
+      const r = await fetch(api + "/health", { cache: "no-store" });
+      const d = await r.json();
+      if (d.status === "ok") setStatus("ok", `Connected · ${d.engine}`);
+      else { setStatus("warn", "Backend loading models…"); setTimeout(checkHealth, 3000); }
+    } catch {
+      setStatus("bad", "Backend not reachable");
+      $("statusPill").title = `Could not reach ${api}/health. Is the server running? Click to change the URL.`;
+    }
+  }
+  function setStatus(kind, text) { $("statusDot").className = "dot " + kind; $("statusText").textContent = text; }
+  $("statusPill").onclick = () => $("settings").classList.toggle("hidden");
+  $("saveUrl").onclick = () => {
+    api = $("apiUrl").value.trim().replace(/\/+$/, "") || defaultApi;
+    store.set("ocr.api", api); checkHealth();
+  };
+
+  // ---- file selection ----
+  const drop = $("drop");
+  drop.onclick = () => $("fileInput").click();
+  drop.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("fileInput").click(); } };
+  $("fileInput").onchange = (e) => pick(e.target.files[0]);
+  ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+  drop.addEventListener("drop", (e) => pick(e.dataTransfer.files[0]));
+  function pick(f) {
+    if (!f) return;
+    file = f;
+    $("fileInfo").textContent = `${f.name} · ${fmtBytes(f.size)}`;
+    $("runBtn").disabled = false;
+  }
+
+  // ---- run: always use the jobs API so any length works and progress is visible ----
+  $("runBtn").onclick = run;
+  async function run() {
+    if (!file) return;
+    hide("error"); hide("results"); show("progressCard");
+    $("runBtn").disabled = true;
+    setProgress("Uploading…", null, "");
+    startTimer();
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const r = await fetch(api + "/v1/jobs", { method: "POST", body: form });
+      const job = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(job.detail || `Upload failed (HTTP ${r.status})`);
+      await poll(job.job_id);
+    } catch (err) {
+      showError(err instanceof TypeError ? `Cannot reach the backend at ${api}. Make sure the backend server is running.` : err.message);
+      hide("progressCard");
+    } finally {
+      stopTimer();
+      $("runBtn").disabled = false;
+    }
+  }
+
+  // A restarting server answers 502/503/504 or drops the
+  // connection for a short while: keep polling instead of failing.
+  const RETRY_FOR_MS = 5 * 60 * 1000;
+  const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
+  async function getJob(id, includeOcr) {
+    let firstFailure = null;
+    for (;;) {
+      let r = null;
+      try {
+        r = await fetch(`${api}/v1/jobs/${id}?include_ocr=${includeOcr}`, { cache: "no-store" });
+      } catch { /* network error: treated like a 503 below */ }
+      if (r && r.ok) return r.json();
+      if (r && ![502, 503, 504].includes(r.status)) {
+        const body = await r.json().catch(() => ({}));
+        if (r.status === 404) throw new Error("Job not found. The server restarted and this deployment keeps jobs in memory; please upload the document again.");
+        throw new Error(body.detail || `Status check failed (HTTP ${r.status})`);
+      }
+      firstFailure = firstFailure || Date.now();
+      if (Date.now() - firstFailure > RETRY_FOR_MS) throw new Error("The server has not answered for 5 minutes. Please try again later.");
+      setProgress("Server is restarting, reconnecting…", null, "Your document is safe; processing resumes automatically.");
+      await sleep(5000);
+    }
+  }
+
+  async function poll(id) {
+    for (;;) {
+      const job = await getJob(id, false);  // small: status + progress only
+      if (job.status === "failed") throw new Error("Processing failed: " + (job.error || "unknown error"));
+      if (job.status === "done") { const full = await getJob(id, true); hide("progressCard"); render(full.result); return; }
+      const total = job.pages_to_process || job.pages_total;
+      const resumed = job.attempts > 1 ? ` · resumed after a server restart (attempt ${job.attempts})` : "";
+      if (job.status === "queued") setProgress("Waiting in queue…", null, `${job.pages_total} page(s)${resumed}`);
+      else setProgress("Reading pages…", total ? job.pages_done / total : null,
+        `${job.pages_done} of ${total} page(s) done` + (job.pages_done < total ? ` · working on page ${job.pages_done + 1}` : "") + resumed);
+      await sleep(POLL_MS);
+    }
+  }
+
+  function setProgress(title, frac, text) {
+    $("progressTitle").textContent = title;
+    $("progressText").textContent = text;
+    const bar = $("bar");
+    bar.classList.toggle("indeterminate", frac === null || frac === 0);
+    bar.firstElementChild.style.width = frac ? `${Math.round(frac * 100)}%` : "";
+  }
+  function startTimer() {
+    startedAt = Date.now();
+    $("elapsed").textContent = "0s";
+    timer = setInterval(() => { $("elapsed").textContent = fmtSecs((Date.now() - startedAt) / 1000); }, 1000);
+  }
+  function stopTimer() { clearInterval(timer); }
+
+  // ---- render results ----
+  function render(res) {
+    result = res;
+    result._seconds = (Date.now() - startedAt) / 1000;
+    show("results");
+
+    const t = $("truncated");
+    if (res.truncated) {
+      t.textContent = `Only the first ${res.page_count} of ${res.pages_total} pages were processed (server page limit).`;
+      show("truncated");
+    } else hide("truncated");
+
+    const review = res.pages.filter((p) => p.needs_review).length;
+    const sources = {};
+    res.pages.forEach((p) => { sources[p.source] = (sources[p.source] || 0) + 1; });
+    $("stats").replaceChildren(
+      stat("Pages", `${res.page_count}${res.pages_total !== res.page_count ? " / " + res.pages_total : ""}`),
+      stat("Avg confidence", res.average_confidence == null ? "n/a" : pct(res.average_confidence)),
+      stat("Needs review", review ? `${review} page(s)` : "No", review ? "bad" : "ok"),
+      stat("Time", fmtSecs(res._seconds)),
+      stat("Read by", Object.entries(sources).map(([s, n]) => `${sourceName(s)} ×${n}`).join(", "), null, true),
+    );
+
+    renderInvoice(res.invoice, res.fields || {}, res.missing_required_fields || [], res.additional_fields || {}, res.validation);
+    $("fullText").textContent = res.text || "(no text found)";
+
+    $("chips").replaceChildren(...res.pages.map((p, i) => {
+      const b = el("button", "chip");
+      b.append(el("span", "dot " + (p.needs_review ? "bad" : "ok")), document.createTextNode(`Page ${p.page + 1}`));
+      b.title = p.needs_review ? "Needs review" : sourceName(p.source);
+      b.onclick = () => selectPage(i);
+      return b;
+    }));
+    selectPage(0);
+  }
+
+  function selectPage(i) {
+    currentPage = i;
+    [...$("chips").children].forEach((c, j) => c.classList.toggle("active", j === i));
+    const p = result.pages[i];
+    const meta = [badge(sourceName(p.source), "info")];
+    if (p.average_confidence != null) meta.push(badge("Confidence " + pct(p.average_confidence), confKind(p.average_confidence)));
+    meta.push(p.needs_review ? badge("Needs review", "bad") : badge("Looks good", "ok"));
+    $("pageMeta").replaceChildren(...meta);
+    renderView();
+  }
+
+  document.querySelectorAll(".tab").forEach((t) => t.onclick = () => {
+    currentView = t.dataset.view;
+    document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("active", x === t));
+    renderView();
+  });
+
+  function renderView() {
+    const p = result.pages[currentPage];
+    const view = $("view");
+    if (currentView === "text") {
+      const pre = el("pre"); pre.textContent = p.text || "(no text on this page)";
+      view.replaceChildren(pre);
+    } else if (currentView === "lines") {
+      const lines = result.lines.filter((l) => l.page === p.page);
+      const box = el("div", "lines");
+      if (!lines.length) box.append(muted("No lines on this page."));
+      lines.forEach((l) => {
+        const c = l.confidence;
+        const row = el("div", "line" + (c != null && c < 0.8 ? " vlow" : c != null && c < 0.93 ? " low" : ""));
+        const txt = el("span"); txt.textContent = l.text;
+        const conf = el("span", "conf");
+        if (c == null) conf.textContent = "no score";
+        else {
+          const track = el("span", "track"), fill = el("span", "fill");
+          fill.style.width = `${Math.round(c * 100)}%`; fill.style.display = "block";
+          track.append(fill); conf.append(track, document.createTextNode(pct(c)));
+        }
+        row.append(txt, conf); box.append(row);
+      });
+      const note = muted("Yellow = below 93% confidence, red = below 80%.");
+      note.style.marginBottom = "8px";
+      view.replaceChildren(note, box);
+    } else {
+      const tables = result.tables.filter((t) => t.page === p.page && t.html);
+      if (!tables.length) {
+        view.replaceChildren(muted("No table detection for this page. Line items are listed under Invoice details."));
+      } else view.replaceChildren(...tables.map((t) => { const w = el("div", "table-scroll"); w.append(safeTable(t.html)); return w; }));
+    }
+  }
+
+  // Rebuild model-produced table HTML from text only: never inject it as markup.
+  function safeTable(html) {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const table = el("table", "ocr");
+    doc.querySelectorAll("tr").forEach((tr) => {
+      const row = el("tr");
+      tr.querySelectorAll("td,th").forEach((cell) => {
+        const c = el(cell.tagName.toLowerCase());
+        c.textContent = cell.textContent.trim();
+        const cs = parseInt(cell.getAttribute("colspan"), 10), rs = parseInt(cell.getAttribute("rowspan"), 10);
+        if (cs > 1 && cs < 50) c.colSpan = cs;
+        if (rs > 1 && rs < 200) c.rowSpan = rs;
+        row.append(c);
+      });
+      table.append(row);
+    });
+    return table;
+  }
+
+  // ---- structured invoice fields (extracted by the backend: result.invoice) ----
+  const REF_LABELS = {
+    payment_terms: "Terms of payment", buyer_order_number: "Buyer's order no.", buyer_order_date: "Buyer's order date",
+    dispatch_doc_number: "Dispatch doc no.", delivery_note: "Delivery note", delivery_note_date: "Delivery note date",
+    dispatched_through: "Dispatched through", destination: "Destination", terms_of_delivery: "Terms of delivery",
+    reference: "Reference no. & date", other_references: "Other references", lr_number: "LR/RR no.",
+    vehicle_number: "Vehicle no.", eway_bill_number: "e-Way bill no.", supplier_reference: "Supplier's ref.",
+  };
+  const STATUS_TEXT = { pass: "All checks passed", warn: "Check warnings", fail: "Checks failed" };
+  const KIND = { pass: "ok", warn: "warn", fail: "bad" };
+
+  // The 5 core fields every response carries; * = required.
+  const KEY_FIELDS = [
+    ["vendor_name", "Vendor name", true], ["invoice_number", "Invoice number", true],
+    ["invoice_date", "Invoice date", true], ["total_amount", "Total amount", true, true], ["currency", "Currency"],
+  ];
+  const MONEY_KEYS = /(^|_)(subtotal|cgst|sgst|utgst|igst|cess|total_tax|round_off|amount|total|rate_amount|value)$/;
+
+  function keyFieldsCard(fields, missing, extra, validation) {
+    const c = card("Key fields", missing.length
+      ? badge(`${missing.length} required field${missing.length === 1 ? "" : "s"} missing`, "bad")
+      : badge("All required fields found", "ok"),
+      downloadBtn("Download fields JSON", () => download(JSON.stringify(
+        { fields, additional_fields: extra, missing_required_fields: missing, validation }, null, 2),
+        "application/json", "-fields.json")));
+    const grid = el("div", "fields");
+    const numbers = extra.invoice_numbers || [];
+    KEY_FIELDS.forEach(([key, label, required, isMoney]) => {
+      const v = fields[key];
+      const f = el("div", "field"), l = el("div", "label"), val = el("div", "value" + (v == null ? " none" : ""));
+      l.textContent = label + (required ? " *" : "");
+      val.textContent = v == null ? (required ? "MISSING, enter manually" : "not found") : isMoney ? fmtMoney(v) : String(v);
+      if (key === "invoice_number" && numbers.length > 1) {
+        l.textContent = `${label} * (${numbers.length})`;
+        val.style.whiteSpace = "pre-line";
+        val.textContent = numbers.join("\n");  // one number per line
+      }
+      if (required && v == null) { val.style.color = "var(--bad)"; val.style.fontStyle = "normal"; val.style.fontWeight = "600"; }
+      f.append(l, val); grid.append(f);
+    });
+    c.append(grid);
+    if (validation && validation.checks_total) {
+      const v = el("div", "small"); v.style.marginTop = "10px";
+      v.append(badge(`${STATUS_TEXT[validation.status] || validation.status} · ${validation.checks_passed}/${validation.checks_total}`,
+        KIND[validation.status] || "info"));
+      c.append(v);
+      if ((validation.issues || []).length) {
+        const ul = el("ul", "small"); ul.style.margin = "6px 0 0 18px";
+        validation.issues.forEach((t) => { const li = el("li"); li.textContent = t; ul.append(li); });
+        c.append(ul);
+      }
+    }
+    c.append(muted("* required"));
+    return c;
+  }
+
+  // Everything else found in THIS document: rendered from whatever keys the backend sent (no fixed list).
+  const pretty = (k) => k.replace(/_/g, " ").replace(/\b(gstin|pan|cin|irn|po|hsn|sac|igst|cgst|sgst|utgst|ifsc|no)\b/gi,
+    (m) => m.toUpperCase()).replace(/^./, (m) => m.toUpperCase());
+  const showValue = (k, v) => typeof v === "number" && MONEY_KEYS.test(k) ? fmtMoney(v)
+    : typeof v === "object" ? JSON.stringify(v) : String(v);
+
+  function objectTable(rows) {
+    const cols = [...new Set(rows.flatMap((r) => (r && typeof r === "object" ? Object.keys(r) : ["value"])))];
+    const t = el("table", "data"), head = el("tr"), body = el("tbody");
+    cols.forEach((k) => { const th = el("th"); th.textContent = pretty(k); head.append(th); });
+    const thead = el("thead"); thead.append(head); t.append(thead);
+    rows.forEach((r) => {
+      const tr = el("tr");
+      cols.forEach((k) => {
+        const v = r && typeof r === "object" ? r[k] : (k === "value" ? r : null);
+        const td = el("td", typeof v === "number" ? "num" : "");
+        td.textContent = v == null ? "" : showValue(k, v); tr.append(td);
+      });
+      body.append(tr);
+    });
+    t.append(body);
+    const wrap = el("div"); wrap.style.overflowX = "auto"; wrap.append(t);
+    return wrap;
+  }
+
+  function additionalFieldsCard(extra) {
+    const keys = Object.keys(extra || {}).filter((k) => k !== "invoice_numbers");
+    const c = card("Additional fields", badge(`${keys.length} found in this document`, "info"));
+    if (!keys.length) { c.append(muted("Nothing beyond the key fields was found.")); return c; }
+    const grid = el("div", "fields"), nested = [];
+    keys.forEach((k) => {
+      const v = extra[k];
+      const isList = Array.isArray(v), isObj = v && typeof v === "object" && !isList;
+      if ((isList && v.some((x) => x && typeof x === "object")) || isObj) { nested.push(k); return; }
+      const f = el("div", "field"), l = el("div", "label"), val = el("div", "value");
+      l.textContent = pretty(k);
+      val.textContent = isList ? v.join(", ") : showValue(k, v);
+      f.append(l, val); grid.append(f);
+    });
+    c.append(grid);
+    nested.forEach((k) => {
+      const v = extra[k];
+      const d = el("details"); d.style.marginTop = "12px";
+      const sm = el("summary"); sm.style.cursor = "pointer"; sm.style.fontWeight = "600";
+      sm.textContent = Array.isArray(v) ? `${pretty(k)} (${v.length})` : pretty(k);
+      d.append(sm, Array.isArray(v) ? objectTable(v)
+        : objectTable(Object.entries(v).map(([kk, vv]) => ({ field: pretty(kk), value: vv }))));
+      c.append(d);
+    });
+    return c;
+  }
+
+  function renderInvoice(inv, fields, missing, extra, validation) {
+    const top = [keyFieldsCard(fields, missing, extra, validation), additionalFieldsCard(extra)];
+    const box = $("invoiceSection");
+    if (!inv) {
+      const c = card("Invoice details");
+      c.append(muted("No other invoice details were detected in this document."));
+      box.replaceChildren(...top, c);
+      return;
+    }
+    const checks = Object.fromEntries((inv.checks || []).map((c) => [c.name, c]));
+    const money = (v) => (v == null ? null : "₹ " + fmtMoney(v));
+    const cards = [...top];
+
+    if (inv.invoice_number || inv.vendor || inv.grand_total != null) {
+      const c = card("Invoice", badge(STATUS_TEXT[inv.status] || inv.status, KIND[inv.status] || "info"),
+        downloadBtn("Download invoice JSON", () => download(JSON.stringify(inv, null, 2), "application/json", "-invoice.json")));
+      const stats = el("div", "stats");
+      stats.append(
+        stat("Invoice no.", inv.invoice_number || "not found", inv.invoice_number ? null : "muted"),
+        stat("Invoice date", inv.invoice_date || "not found", inv.invoice_date ? null : "muted"),
+        stat("Grand total", money(inv.grand_total) || "not found", inv.grand_total != null ? null : "muted"),
+        stat("Taxable value", money(inv.taxable_value) || "n/a"),
+        stat("Total tax", money(inv.total_tax) || "n/a"),
+      );
+      c.append(stats);
+
+      const parties = el("div", "parties");
+      if (inv.vendor) parties.append(partyCard("Vendor (seller)", inv.vendor, checks["Vendor GSTIN"]));
+      if (inv.buyer) parties.append(partyCard("Buyer (bill to)", inv.buyer, checks["Buyer GSTIN"]));
+      const sh = inv.consignee;
+      if (sh && !(inv.buyer && sh.name === inv.buyer.name && sh.gstin === inv.buyer.gstin))
+        parties.append(partyCard("Consignee (ship to)", sh));
+      if (parties.children.length) c.append(h3("Parties"), parties);
+
+      const refs = Object.entries(inv.references || {});
+      const ein = inv.e_invoice;
+      const kv = el("dl", "kv");
+      if (inv.document_type) kvRow(kv, "Document", inv.document_type);
+      if (inv.invoice_date_iso) kvRow(kv, "Date (ISO)", inv.invoice_date_iso);
+      refs.forEach(([k, v]) => kvRow(kv, REF_LABELS[k] || k.replace(/_/g, " "), v));
+      if (ein && ein.irn) kvRow(kv, "IRN", ein.irn, checks["IRN format"]);
+      if (ein && ein.ack_no) kvRow(kv, "Ack no.", ein.ack_no);
+      if (ein && ein.ack_date) kvRow(kv, "Ack date", ein.ack_date);
+      if (kv.children.length) c.append(h3("References"), kv);
+      cards.push(c);
+    }
+
+    const items = inv.line_items || [], taxes = inv.taxes || [];
+    if (items.length || taxes.length) {
+      const c = card("Line items & taxes");
+      if (items.length) {
+        const t = table(["#", "Description", "HSN/SAC", "Qty", "Rate", "Per", "Amount"], [4, 6]);
+        items.forEach((it) => {
+          const desc = el("td");
+          desc.append(document.createTextNode(it.description || ""));
+          if (it.details) { const d = el("div", "sub"); d.textContent = it.details; desc.append(d); }
+          t.body.append(tr([txt(it.sl_no ?? ""), desc, txt(it.hsn_sac || ""), txt(it.quantity || ""),
+            txt(it.rate != null ? fmtMoney(it.rate) : "", "num"), txt(it.per || ""),
+            txt(it.amount != null ? fmtMoney(it.amount) : "", "num")]));
+        });
+        c.append(scroll(t.table));
+      }
+      const tot = table(null, [1]);
+      const line = (label, v, cls) => tot.body.append(tr([txt(label), txt(v, "num")], cls));
+      if (inv.taxable_value != null) line("Taxable value", fmtMoney(inv.taxable_value));
+      taxes.forEach((x) => line(x.rate != null ? `${x.name} @ ${x.rate}%` : x.name, fmtMoney(x.amount)));
+      if (inv.round_off != null) line("Round off", fmtMoney(inv.round_off));
+      if (inv.grand_total != null) line("Grand total", money(inv.grand_total), "grand");
+      const wrap = el("div", "totals");
+      wrap.append(tot.table);
+      if (inv.amount_in_words) { const w = el("div", "words"); w.textContent = inv.amount_in_words; wrap.append(w); }
+      c.append(h3("Taxes & totals"), wrap);
+      if (inv.remarks || inv.jurisdiction) {
+        const kv = el("dl", "kv");
+        if (inv.remarks) kvRow(kv, "Remarks", inv.remarks);
+        if (inv.jurisdiction) kvRow(kv, "Jurisdiction", inv.jurisdiction);
+        c.append(h3("Other"), kv);
+      }
+      cards.push(c);
+    }
+
+    if ((inv.bills || []).length) {
+      const c = card(`Bills (${inv.bills.length})`);
+      const t = table(["#", "Invoice number", "Date", "Amount"], [3]);
+      inv.bills.forEach((b, i) => t.body.append(tr([txt(i + 1), txt(b.invoice_number), txt(b.invoice_date || ""),
+        txt(b.amount != null ? fmtMoney(b.amount) : "—", "num")])));
+      if (inv.grand_total != null)
+        t.body.append(tr([txt(""), txt(""), txt("Total"), txt(money(inv.grand_total), "num")], "grand"));
+      c.append(scroll(t.table));
+      cards.push(c);
+    }
+
+    if (inv.submission_form) {
+      const sf = inv.submission_form;
+      const c = card("Bill submission form");
+      if (sf.title) c.append(muted(sf.title));
+      const kv = el("dl", "kv");
+      kv.style.marginTop = "8px";
+      Object.entries(sf.fields || {}).forEach(([k, v]) =>
+        kvRow(kv, k.replace(/_/g, " ").replace(/\b(\w)/g, (m) => m.toUpperCase()).replace(/\bSpoc\b/, "SPOC")
+          .replace(/\bHod\b/, "HOD").replace(/\bLof\b/, "LOF").replace(/\bSac Hsn\b/, "SAC/HSN"), v));
+      c.append(kv);
+      const sign = el("dl", "kv");
+      if (sf.prepared_by) kvRow(sign, "Prepared by", sf.prepared_by);
+      if (sf.verified_by) kvRow(sign, "Verified by", sf.verified_by);
+      (sf.approved_by || []).forEach((a) => kvRow(sign, "Approved by", a));
+      if (sign.children.length) c.append(h3("Sign-off"), sign);
+      cards.push(c);
+    }
+
+    if (inv.approval) {
+      const a = inv.approval;
+      const c = card("Approval", badge(a.status === "approved" ? "Approved" : "Approval requested, not yet approved",
+                                       a.status === "approved" ? "ok" : "warn"));
+      const kv = el("dl", "kv");
+      if (a.approved_by) kvRow(kv, "Approved by", a.approved_by + (a.approved_by_email ? ` <${a.approved_by_email}>` : ""));
+      if (a.approved_on) kvRow(kv, "Approved on", a.approved_on);
+      if (a.requested_by) kvRow(kv, "Requested by", a.requested_by);
+      if (a.subject) kvRow(kv, "Subject", a.subject);
+      c.append(kv);
+      cards.push(c);
+    }
+
+    if (inv.cost_sheet) {
+      const cs = inv.cost_sheet;
+      const c = card(cs.title || "Cost sheet");
+      const kv = el("dl", "kv");
+      if (cs.location) kvRow(kv, "Location", cs.location);
+      if (cs.month) kvRow(kv, "Month", cs.month);
+      if (cs.date) kvRow(kv, "Date", cs.date);
+      if (kv.children.length) c.append(kv);
+      const t = table(["#", "Account code", "Description", "Amount"], [3]);
+      cs.lines.forEach((l) => t.body.append(tr([txt(l.sl_no ?? ""), txt(l.account_code || ""), txt(l.description),
+        txt(l.amount != null ? fmtMoney(l.amount) : "—", "num")])));
+      if (cs.grand_total != null)
+        t.body.append(tr([txt(""), txt(""), txt("Grand total"), txt(fmtMoney(cs.grand_total), "num")], "grand"));
+      c.append(h3("Lines"), scroll(t.table));
+      cards.push(c);
+    }
+
+    if ((inv.checks || []).length) {
+      const n = (s) => inv.checks.filter((c) => c.status === s).length;
+      const plural = (k, word) => `${n(k)} ${word}${n(k) === 1 ? "" : "s"}`;
+      const c = card("Automatic checks", muted(`${n("pass")} passed · ${plural("warn", "warning")} · ${n("fail")} failed`));
+      const list = el("div", "checks");
+      const order = { fail: 0, warn: 1, pass: 2 };
+      [...inv.checks].sort((x, y) => order[x.status] - order[y.status])
+        .forEach((ch) => list.append(badgeLine(KIND[ch.status], `${ch.name}: ${ch.message}`)));
+      c.append(list);
+      cards.push(c);
+    }
+    box.replaceChildren(...cards);
+  }
+
+  // A card with a title; a badge passed first sits next to the title, anything else goes to the right.
+  function card(title, ...extras) {
+    const c = el("div", "card"), head = el("div", "card-head"), h = el("h2");
+    h.textContent = title;
+    const rest = extras.filter(Boolean);
+    if (rest.length && rest[0].classList.contains("badge")) h.append(rest.shift());
+    head.append(h, ...rest);
+    c.append(head);
+    return c;
+  }
+  function downloadBtn(label, onclick) { const b = el("button", "ghost"); b.textContent = label; b.onclick = onclick; return b; }
+  function h3(text) { const h = el("h3"); h.textContent = text; return h; }
+  function partyCard(role, p, gstinCheck) {
+    const d = el("div", "party"), r = el("div", "role"), n = el("div", "name");
+    r.textContent = role; n.textContent = p.name || "(name not found)";
+    d.append(r, n);
+    if (p.address) { const a = el("div", "addr"); a.textContent = p.address; d.append(a); }
+    const kv = el("dl", "kv");
+    if (p.gstin) kvRow(kv, "GSTIN", p.gstin, gstinCheck);
+    if (p.pan) kvRow(kv, "PAN", p.pan);
+    if (p.state) kvRow(kv, "State", p.state + (p.state_code ? ` (${p.state_code})` : ""));
+    if (p.cin) kvRow(kv, "CIN", p.cin);
+    if (p.email) kvRow(kv, "Email", p.email);
+    d.append(kv);
+    return d;
+  }
+  function kvRow(dl, key, value, check) {
+    const dt = el("dt"), dd = el("dd");
+    dt.textContent = key; dd.textContent = value;
+    if (check) dd.append(badge(check.status === "pass" ? "✓ valid" : "✗ check", KIND[check.status]));
+    dl.append(dt, dd);
+  }
+  function table(headers, numericCols) {
+    const t = el("table", "data"), body = el("tbody");
+    if (headers) {
+      const thead = el("thead"), row = el("tr");
+      headers.forEach((h, i) => { const th = el("th", numericCols.includes(i) ? "num" : ""); th.textContent = h; row.append(th); });
+      thead.append(row); t.append(thead);
+    }
+    t.append(body);
+    return { table: t, body };
+  }
+  function tr(cells, cls) { const r = el("tr", cls); r.append(...cells); return r; }
+  function txt(v, cls) { const td = el("td", cls); td.textContent = String(v); return td; }
+  function scroll(node) { const w = el("div", "table-scroll"); w.append(node); return w; }
+
+  // ---- downloads / copy ----
+  $("dlJson").onclick = () => download(JSON.stringify(stripPrivate(result), null, 2), "application/json", ".json");
+  $("dlTxt").onclick = () => download(result.text || "", "text/plain", ".txt");
+  $("copyAll").onclick = async (e) => {
+    try { await navigator.clipboard.writeText(result.text || ""); flash(e.target, "Copied"); }
+    catch { flash(e.target, "Copy failed"); }
+  };
+  function stripPrivate(r) { const { _seconds, ...rest } = r; return rest; }
+  function download(content, type, ext) {
+    const a = el("a");
+    a.href = URL.createObjectURL(new Blob([content], { type }));
+    a.download = (file ? file.name.replace(/\.[^.]+$/, "") : "ocr") + "-ocr" + ext;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+  function flash(btn, msg) { const old = btn.textContent; btn.textContent = msg; setTimeout(() => btn.textContent = old, 1200); }
+
+  // ---- small DOM helpers ----
+  function el(tag, cls) { const e = document.createElement(tag); if (cls) e.className = cls; return e; }
+  function show(id) { $(id).classList.remove("hidden"); }
+  function hide(id) { $(id).classList.add("hidden"); }
+  function showError(msg) { $("error").textContent = msg; show("error"); }
+  function muted(text) { const d = el("div", "muted small"); d.textContent = text; return d; }
+  function badge(text, kind) { const b = el("span", "badge " + kind); b.textContent = text; return b; }
+  function badgeLine(kind, text) { const d = el("div"); d.append(badge({ ok: "✓", warn: "!", bad: "✗" }[kind], kind), document.createTextNode(" " + text)); return d; }
+  function stat(label, value, kind, small) {
+    const d = el("div", "stat"), l = el("div", "label"), v = el("div", "value");
+    l.textContent = label; v.textContent = value;
+    if (kind) v.style.color = `var(--${kind})`;
+    if (small) v.style.fontSize = "14px";
+    d.append(l, v); return d;
+  }
+  function field(label, value) {
+    const d = el("div", "field"), l = el("div", "label"), v = el("div", "value" + (value ? "" : " none"));
+    l.textContent = label; v.textContent = value || "not found";
+    d.append(l, v); return d;
+  }
+  const SOURCE_NAMES = { "pdf-text-layer": "PDF text layer", "pdf-text-layer+ocr": "PDF text + OCR", rapidocr: "OCR (PP-OCRv6)", paddleocr: "OCR (PP-OCRv6)", fake: "Fake engine" };
+  function sourceName(s) { return SOURCE_NAMES[s] || s; }
+  function confKind(c) { return c >= 0.93 ? "ok" : c >= 0.8 ? "warn" : "bad"; }
+  function pct(v) { return (v * 100).toFixed(1) + "%"; }
+  function fmtSecs(s) { s = Math.round(s); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`; }
+  function fmtBytes(b) { return b < 1024 * 1024 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1048576).toFixed(1)} MB`; }
+  function fmtMoney(n) { return n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+  checkHealth();
+})();
+</script>
+</body>
+</html>
